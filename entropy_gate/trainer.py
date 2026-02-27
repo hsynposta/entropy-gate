@@ -65,10 +65,13 @@ class GatedTrainer:
         self.history: List[Dict] = []
 
     def _compute_center(self, X: torch.Tensor):
-        """Compute training distribution center and radius."""
+        """Compute training distribution center and radius.
+        Uses 75th percentile of distances as d0 — gives the gate
+        more room and avoids cutting off valid training samples.
+        """
         self.train_center = X.mean(dim=0).to(self.device)
         dists = torch.norm(X - self.train_center.cpu(), dim=1)
-        self.train_radius = dists.mean().item()
+        self.train_radius = float(torch.quantile(dists, 0.75).item())
         self.geo_gate.log_d0.data = torch.tensor(self.train_radius).log().to(self.device)
 
     def _distances(self, X: torch.Tensor) -> torch.Tensor:

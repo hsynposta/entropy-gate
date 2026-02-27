@@ -5,32 +5,34 @@
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.10+-orange.svg)](https://pytorch.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18055798-blue)](https://doi.org/10.5281/zenodo.18055798)
 
-> Based on: *"Hybrid Geometric–Entropy Gating"* — Aydin, 2025
+> Based on: *"Hybrid Geometric–Entropy Gating as a Finite-Range Validity Principle for Robust Learning"* — Huseyin Aydin, 2025
+> 📄 [Read the paper on Zenodo](https://doi.org/10.5281/zenodo.18055798)
 
 ---
 
 ## The Problem
 
-Modern neural networks are **overconfident outside their training distribution**. When a model encounters an out-of-distribution (OOD) sample, it often predicts with high confidence — a dangerous property in medical AI, autonomous systems, and financial modeling.
+Modern neural networks are **overconfident outside their training distribution**. When a model encounters an out-of-distribution (OOD) sample — or when training data is contaminated with noisy/shifted samples — standard cross-entropy treats every sample equally. This hurts both accuracy and calibration.
 
 ## The Idea
 
-During training, not all samples should be treated equally. A sample that is:
-- **far from the training manifold**, OR
-- **predicted with high uncertainty**
+During training, not all samples should carry equal weight. A sample that is:
+- **far from the training manifold** (geometric gate), OR
+- **predicted with high uncertainty** (entropy gate)
 
-should contribute less to the loss. This library implements that idea as a differentiable soft gate.
+should contribute less to the loss. This library implements that idea as a differentiable soft gate:
 
 ```
 w_hybrid(x) = w_range(x) × w_ent(x)
 ```
 
 Where:
-- `w_range(x)` = **Geometric Gate** — sigmoid over distance from training center
-- `w_ent(x)` = **Entropy Gate** — sigmoid over prediction entropy
+- `w_range(x)` = **Geometric Gate** — sigmoid over L2 distance from training center
+- `w_ent(x)`   = **Entropy Gate** — sigmoid over prediction entropy
 
-The modified loss is simply:
+The modified loss:
 
 ```
 L = (1/N) Σ  w_hybrid(xᵢ) · CrossEntropy(f(xᵢ), yᵢ)
@@ -41,15 +43,12 @@ L = (1/N) Σ  w_hybrid(xᵢ) · CrossEntropy(f(xᵢ), yᵢ)
 ## Installation
 
 ```bash
-pip install entropy-gate
+pip install -e ".[demo]"
 ```
 
-Or from source:
-
+Or from PyPI (coming soon):
 ```bash
-git clone https://github.com/yourusername/entropy-gate
-cd entropy-gate
-pip install -e ".[demo]"
+pip install entropy-gate
 ```
 
 ---
@@ -61,17 +60,14 @@ import torch
 import torch.nn as nn
 from entropy_gate import GatedTrainer
 
-# Your model (any nn.Module that outputs logits)
 model = nn.Sequential(
-    nn.Linear(2, 64), nn.ReLU(),
-    nn.Linear(64, 4),
+    nn.Linear(64, 128), nn.ReLU(),
+    nn.Linear(128, 10),
 )
 
-# Train with gating — drop-in replacement for standard training
-trainer = GatedTrainer(model, num_classes=4, warmup_epochs=10)
+trainer = GatedTrainer(model, num_classes=10, warmup_epochs=15)
 trainer.fit(X_train, y_train, epochs=100)
 
-# Evaluate
 print(trainer.evaluate(X_ood_test, y_ood_test))
 ```
 
@@ -79,47 +75,50 @@ print(trainer.evaluate(X_ood_test, y_ood_test))
 
 ## Advanced Usage
 
-### Use gates directly
-
 ```python
 from entropy_gate import GeometricGate, EntropyGate, HybridGate, GatedLoss
 
-geo   = GeometricGate(d0=2.0, alpha=5.0)
-ent   = EntropyGate(beta=5.0, num_classes=4)
-gate  = HybridGate(geo, ent, warmup_steps=500)
-loss  = GatedLoss(gate)
+geo  = GeometricGate(d0=2.0, alpha=4.0)
+ent  = EntropyGate(beta=4.0, num_classes=10)
+gate = HybridGate(geo, ent, warmup_steps=500)
+loss = GatedLoss(gate)
 
 # Inside your training loop:
 logits    = model(X_batch)
 distances = torch.norm(X_batch - train_center, dim=1)
 loss_val  = loss(logits, y_batch, distances)
 loss_val.backward()
-gate.step()   # advance warmup counter
-```
-
-### Visualize gate weights
-
-```python
-weights = trainer.gate_weights(X_test)  # (N,) in [0, 1]
-# weights near 0 → model should be uncertain here
-# weights near 1 → model is confident + in-distribution
+gate.step()
 ```
 
 ---
 
-## Demo
+## Benchmark Results
 
-Reproduces the paper's core experiment (2D 4-class OOD shift):
+**Dataset:** sklearn Digits (64-dim, 10 classes, 1797 samples)
+**Scenario:** 35% of training samples contaminated with noise + wrong labels
+**OOD test:** Gaussian pixel noise at increasing intensity
+**Setup:** 5 random seeds
 
-```bash
-python examples/demo.py
-```
+![Benchmark](benchmark.png)
 
-![Demo results](Figure_1.png)
+| Test Noise σ | Baseline Acc | Gated Acc  | Δ Acc    | Base ECE | Gate ECE |
+|:------------:|:------------:|:----------:|:--------:|:--------:|:--------:|
+| 0.0 (clean)  | 95.5 ± 0.8%  | 95.5 ± 1.4%| —        | 7.31%    | 7.38%    |
+| 0.5          | 91.2 ± 0.5%  | 91.0 ± 0.9%| ─ 0.1pp  | 8.54%    | 7.40%    |
+| 1.0          | 73.2 ± 2.3%  | 76.4 ± 3.1%| **▲ 3.2pp** | 2.57% | 4.23%  |
+| 1.5          | 55.6 ± 2.4%  | 59.0 ± 2.6%| **▲ 3.3pp** | 16.27%| 14.07% |
+| 2.0          | 42.8 ± 2.6%  | 45.8 ± 2.6%| **▲ 3.0pp** | 29.98%| 27.61% |
+
+**Average OOD accuracy gain: +2.34 pp**
+**Average ECE improvement: +1.01 pp**
+
+> Both models see the same contaminated training data.
+> The gate automatically identifies and downweights noisy samples — no manual data cleaning required.
 
 ---
 
-## How it Works
+## How It Works
 
 ### Geometric Gate
 
@@ -130,8 +129,8 @@ w_range(x) = σ( −α · (d(x)/d₀ − 1) )
 ```
 
 - `d(x)` — L2 distance from training center
-- `d₀`   — reference radius (mean distance of training samples)
-- `α`    — steepness (higher = sharper boundary)
+- `d₀`   — 75th percentile of training distances (robust radius estimate)
+- `α`    — steepness (default: 4.0)
 
 ### Entropy Gate
 
@@ -141,36 +140,37 @@ Samples the model is uncertain about receive lower weight:
 w_ent(x) = σ( −β · (H(x) − H₀) / ΔH )
 ```
 
-- `H(x)` — Shannon entropy of softmax output: `−Σ pₖ log pₖ`
-- `H₀`   — entropy threshold (default: `log(C)/2`)
-- `ΔH`   — normalizer (max entropy = `log(C)`)
-- `β`    — steepness
+- `H(x)` — Shannon entropy: `−Σ pₖ log pₖ`
+- `H₀`   — threshold (default: `log(C)/2`)
+- `β`    — steepness (default: 4.0)
 
 ### Warm-Up
 
-During the first `warmup_epochs`, all gate weights are set to 1 (standard training). This gives the model time to form meaningful representations before the gate activates.
+During the first `warmup_epochs`, all gate weights are 1 (standard training). This gives the model time to form meaningful representations before the gate activates.
 
 ---
 
-## Results
+## Run the Benchmark
 
-On the 2D benchmark (4-class Gaussian blobs with covariate shift):
-
-| Metric               | Baseline CE | Gated (Hybrid) |
-|----------------------|:-----------:|:--------------:|
-| ID Accuracy          |    ~98%     |     ~97%       |
-| OOD Accuracy         |    ~71%     |    **~78%**    |
-| OOD Mean Confidence  |    ~82%     |    **~69%**    |
-
-The gated model sacrifices ~1% ID accuracy for ~7% OOD accuracy gain and significantly better-calibrated uncertainty.
+```bash
+python main.py                    # 5 seeds, 100 epochs
+python main.py --seeds 3          # faster
+python main.py --noise-ratio 0.5  # 50% contamination
+python main.py --no-plot          # results only
+```
 
 ---
 
 ## Citation
 
 ```bibtex
-@article{Hybrid Geometric–Entropy Gating as a Finite-Range Validity Principle for Robust Learning,
-Huseyin, A. (2025). Hybrid Geometric–Entropy Gating as a Finite-Range Validity Principle for Robust Learning. Zenodo. https://doi.org/10.5281/zenodo.18055798
+@article{aydin2025hybrid,
+  title   = {Hybrid Geometric–Entropy Gating as a Finite-Range Validity Principle for Robust Learning},
+  author  = {Huseyin, A.},
+  year    = {2025},
+  journal = {Zenodo},
+  doi     = {10.5281/zenodo.18055798},
+  url     = {https://doi.org/10.5281/zenodo.18055798}
 }
 ```
 

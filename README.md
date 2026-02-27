@@ -115,7 +115,7 @@ Reproduces the paper's core experiment (2D 4-class OOD shift):
 python examples/demo.py
 ```
 
-![Demo results](examples/results.png)
+![Demo results](Figure_1.png)
 
 ---
 

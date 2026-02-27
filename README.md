@@ -169,10 +169,8 @@ The gated model sacrifices ~1% ID accuracy for ~7% OOD accuracy gain and signifi
 ## Citation
 
 ```bibtex
-@article{aydin2025hybrid,
-  title   = {Hybrid Geometric–Entropy Gating},
-  author  = {Aydin, Hiram},
-  year    = {2025},
+@article{Hybrid Geometric–Entropy Gating as a Finite-Range Validity Principle for Robust Learning,
+Huseyin, A. (2025). Hybrid Geometric–Entropy Gating as a Finite-Range Validity Principle for Robust Learning. Zenodo. https://doi.org/10.5281/zenodo.18055798
 }
 ```
 
